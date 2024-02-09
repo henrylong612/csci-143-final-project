@@ -2,14 +2,22 @@ version: '3.8'
 
 services:
   web:
-    build: ./services/web
+    build: 
+      context: ./services/web
+      dockerfile: Dockerfile.prod
     command: gunicorn --bind 0.0.0.0:1121 manage:app
-    ports:
-        - 1121:1121
+    expose:
+        - 1121
     env_file:
       - ./.env.prod
     depends_on:
       - db
+  nginx:
+    build: ./services/nginx
+    ports:
+      - 1121:80
+    depends_on:
+      - web
   db:
     image: postgres:13
     volumes:
