@@ -9,8 +9,52 @@ Here is a short animated gif of uploading a file at http://localhost:1121/upload
 
 ## Build Instructions
 
+Here is how to get Flask on Docker up and running from the root directory.
+
 ### Development
 
-Here is how to get Flask on Docker up and running from the root directory:
+1. Build the image and run the containers.
+```
+$ docker-compose up -d --build
+```
+2. Create the table.
+```
+$ docker-compose exec web python manage.py create_db
+```
+3. Test out to see whether the webpage is working.
+```
+$ curl http://localhost:1121
+```
+You should receive output similar to
+```
+{
+  "hello": "world"
+}
+```
+4. When done, be sure to bring down the development containers (an    d the associated volumes with the `-v` flag):
+```
+$ docker-compose down -v
+```
 
-1. 
+## Production
+
+1. Build the image and run the containers.
+```
+$ docker-compose -f docker-compose.prod.yml up -d --build
+```
+2. Create the table.
+```
+$ docker-compose -f docker-compose.prod.yml exec web python manage.py create_db
+```
+3. Test out to see whether the webpage is working.
+```
+$ curl http://localhost:1121
+```
+You should receive output similar to
+```
+{"hello": "world"}
+```
+4. When done, be sure to bring down the development containers (an    d the associated volumes with the `-v` flag):
+```
+$ docker-compose down -v
+```
