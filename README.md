@@ -25,18 +25,20 @@ $ docker-compose exec web python manage.py create_db
 ```
 $ curl http://localhost:1121
 ```
-You should receive output similar to
+You should receive output similar to below.
 ```
 {
   "hello": "world"
 }
 ```
-4. When done, be sure to bring down the development containers (an    d the associated volumes with the `-v` flag):
+4. When done, be sure to bring down the development containers (and the associated volumes with the `-v` flag).
 ```
 $ docker-compose down -v
 ```
 
-## Production
+### Production
+
+The production uses gunicorn and nginx.
 
 1. Build the image and run the containers.
 ```
