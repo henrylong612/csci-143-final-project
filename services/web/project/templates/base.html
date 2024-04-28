@@ -1,0 +1,26 @@
+<html>
+    <head>
+        <title>Henry's CS40 Twitter Clone</title>
+        <link rel="icon" type="image/x-icon" href="{{url_for('static', filename='img/twitter_logo.png')}}">
+        <link rel="stylesheet" href="{{url_for('static', filename='css/style.css')}}">
+    </head>
+    <body>
+        <div class="sidenav">
+            <img class=center src="{{url_for('static', filename='img/twitter_logo.png')}}">
+            <h2><a href='/reset'>Home</a></h2>
+            {% if logged_in %}
+            <h2><a href='/create_message'>Create Message</a></h2>
+            <h2><a href='/logout'>Logout</a></h2>
+            <h2><a href='/delete_account'>Delete Account</a></h2>
+            {% else %}
+            <h2><a href='/login'>Login</a></h2>
+            <h2><a href='/create_user'>Create User</a></h2>
+            {% endif %}
+        </div>
+        <div class="main">
+            <h1>Henry's CS40 Twitter Clone</h1>
+            {% block content %}
+            {% endblock %}
+        </div>
+    </body>
+</html>

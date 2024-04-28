@@ -1,0 +1,112 @@
+img {
+    width:100px;
+}
+
+body {
+    font-family: Georgia, 'Times New Roman', Times, serif;
+  }
+  
+.container {
+    border: 2px solid #dedede;
+    background-color: #f1f1f1;
+    border-radius: 5px;
+    padding: 10px;
+    margin: 10px 0;
+  }
+  
+.darker {
+    border-color: #ccc;
+    background-color: #ddd;
+  }
+  
+.container::after {
+    content: "";
+    clear: both;
+    display: table;
+  }
+  
+.container img {
+    float: left;
+    max-width: 60px;
+    width: 100%;
+    margin-right: 20px;
+    border-radius: 50%;
+  }
+  
+.time-right {
+    float: right;
+    color: #aaa;
+  }
+
+.sidenav {
+    width: 130px;
+    position: fixed;
+    z-index: 1;
+    top: 20px;
+    left: 10px;
+    background: #eee;
+    overflow-x: hidden;
+    padding: 8px 0;
+  }
+  
+.sidenav a {
+    padding: 6px 8px 6px 16px;
+    text-decoration: none;
+    font-size: 25px;
+    color: #1DA1F2;
+    display: block;
+  }
+  
+.sidenav a:hover {
+    color: #064579;
+  }
+  
+.main {
+    margin-left: 140px; /* Same width as the sidebar + left position in px */
+    font-size: 28px; /* Increased text to enable scrolling */
+    padding: 0px 10px;
+  }
+  
+.center {
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.red {
+  color:red
+}
+
+.green {
+  color: green
+}
+
+.yellow {
+  color:orange
+}
+
+.message_box {
+  width: 700px;
+  height: 200px
+}
+
+.submit {
+  background-color: #1DA1F2;
+  border: none;
+  color: white;
+  padding: 15px 32px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 16px;
+}
+
+.submit:hover {
+  color: whitesmoke;
+  background-color: #064579;
+}
+
+@media screen and (max-height: 450px) {
+    .sidenav {padding-top: 15px;}
+    .sidenav a {font-size: 18px;}
+  }

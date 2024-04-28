@@ -8,11 +8,23 @@ services:
       # bind (mount volume)
       - ./services/web/:/usr/src/app/
     ports:
-      - 1121:1121
+      - 1121:5000
     env_file:
       - ./.env.dev
     depends_on:
       - db
+      - postgres
+  postgres:
+    build: services/postgres
+    volumes:
+      - ./:/tmp/db
+      - postgres:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=pass
+      - PGUSER=postgres
+    ports:
+      - 1122:5432
   db:
     image: postgres:13
     volumes:
@@ -25,3 +37,4 @@ services:
 
 volumes:
   postgres_data:
+  postgres:
