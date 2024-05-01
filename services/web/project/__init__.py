@@ -68,7 +68,7 @@ def retrieve_messages(a):
     """)
 
     res = connection.execute(sql, {
-       'offset': 0
+       'offset': a
         })
 
     for row_messages in res.fetchall():
@@ -120,17 +120,6 @@ def root():
     except TypeError:
         page_number=1
     
-    '''
-    messages = [{
-            'id': 1,
-            'message': 1,
-            'username': 1,
-            'age': 1,
-            'created_at': 1,
-            'image_url': 1
-        }]
-    '''
-
     messages=retrieve_messages(page_number)
 
     # render the jinja2 template and pass the result to firefox
@@ -260,7 +249,7 @@ def create_user():
                 response.set_cookie('username',new_username)
                 response.set_cookie('password',new_password)
                 return response
-            except:
+            except sqlalchemy.exc.IntegrityError:
                 return render_template('create_user.html', already_exists=True)
 
 
@@ -326,3 +315,187 @@ def delete_message():
     return redirect('/')
 
 
+
+@app.route('/edit_message', methods=['POST','GET'])
+def edit_message():
+    print_debug_info()
+
+    username=request.cookies.get('username')
+    password=request.cookies.get('password')
+
+    good_credentials=are_credentials_good(username, password)
+    if good_credentials:
+        logged_in=True
+    else:
+        logged_in=False
+    print('logged-in=',logged_in)
+
+    if not logged_in:
+        return redirect('/')
+
+    message_id=request.form.get('message_id')
+    print('message_id=',message_id)
+    original_message=request.form.get('original_message')[3:-4]
+    print('original_message=',original_message)
+    updated_message=request.form.get('updated_message')
+
+    if not message_id:
+        return redirect('/')
+
+    if updated_message is None:
+        return render_template('edit_message.html', logged_in=logged_in, message_id=message_id, original_message=original_message)
+    elif not updated_message:
+        return render_template('edit_message.html', invalid_message=True, logged_in=logged_in, message_id=message_id, original_message=original_message)
+    else:
+        try:
+            created_at=str(datetime.datetime.now()).split('.')[0]
+            sql = sqlalchemy.sql.text("""
+            UPDATE messages SET message= :updated_message, created_at= :created_at WHERE id= :message_id;
+            """)
+            print('message=',updated_message)
+            print('message_id=',message_id)
+            res = connection.execute(sql, {
+                'updated_message': updated_message,
+                'created_at': created_at,
+                'message_id': str(message_id)
+                })
+            return render_template('edit_message.html', message_sent=True, logged_in=logged_in, message_id=message_id)
+        except sqlalchemy.exc.IntegrityError: 
+            return render_template('edit_message.html', already_exists=True, logged_in=logged_in, message_id=message_id, original_message=original_message)
+
+
+
+
+@app.route('/delete_account', methods=['GET','POST'])
+def delete_account0():
+    print_debug_info()
+
+    username=request.cookies.get('username')
+    password=request.cookies.get('password')
+
+    good_credentials=are_credentials_good(username, password)
+    if good_credentials:
+        logged_in=True
+    else:
+        logged_in=False
+    print('logged-in=',logged_in)
+
+    if not logged_in:
+        return redirect('/')
+
+    return render_template('delete_account.html', logged_in=logged_in, account_deleted=False)
+
+@app.route('/account_deleted', methods=['GET','POST'])
+def account_deleted():
+    print_debug_info()
+
+    username=request.cookies.get('username')
+    password=request.cookies.get('password')
+
+    good_credentials=are_credentials_good(username, password)
+    if good_credentials:
+        logged_in=True
+    else:
+        logged_in=False
+    print('logged-in=',logged_in)
+
+    if not logged_in:
+        return redirect('/')
+
+    sql = sqlalchemy.sql.text("""
+    SELECT id from users WHERE username= :username and password= :password;
+    """)
+    res = connection.execute(sql, {
+        'username': username,
+        'password': password
+        })
+    for row in res.fetchall():
+        sender_id=row[0]
+
+    sql = sqlalchemy.sql.text("""
+    DELETE from messages WHERE sender_id= :id;
+    """)
+    res = connection.execute(sql, {
+        'id': sender_id
+        })
+
+    sql = sqlalchemy.sql.text("""
+    DELETE from users WHERE username= :u and password= :p;
+    """)
+    res = connection.execute(sql, {
+        'u': username,
+        'p': password
+        })
+
+
+    response = make_response(render_template('delete_account.html', account_deleted=True))
+    response.delete_cookie('username')
+    response.delete_cookie('password')
+    response.delete_cookie('page_number')
+    return response
+
+
+
+@app.route('/next_page', methods=['GET','POST'])
+def next_page():
+    print_debug_info()
+
+    username=request.cookies.get('username')
+    password=request.cookies.get('password')
+    good_credentials=are_credentials_good(username, password)
+    if good_credentials:
+        logged_in=True
+    else:
+        logged_in=False
+    print('logged_in=',logged_in)
+
+    try:
+        page_number=int(request.cookies.get('page_number'))
+    except TypeError:
+        page_number=1
+
+    print('page_number=',page_number)
+    page_number+=1
+
+
+    response = make_response(redirect('/'))
+    response.set_cookie('page_number',str(page_number))
+    return response
+
+@app.route('/previous_page', methods=['GET','POST'])
+def previous_page():
+    print_debug_info()
+
+    username=request.cookies.get('username')
+    password=request.cookies.get('password')
+    good_credentials=are_credentials_good(username, password)
+    if good_credentials:
+        logged_in=True
+    else:
+        logged_in=False
+    print('logged-in=',logged_in)
+
+    try:
+        page_number=int(request.cookies.get('page_number'))
+    except TypeError:
+        page_number=1
+
+    print('page_number=',page_number)
+    page_number-=1
+
+    response = make_response(redirect('/'))
+    response.set_cookie('page_number',str(page_number))
+    return response
+
+@app.route('/search', methods=['GET','POST'])
+def search():
+    print_debug_info()
+
+    username=request.cookies.get('username')
+    password=request.cookies.get('password')
+    good_credentials=are_credentials_good(username, password)
+    if good_credentials:
+        logged_in=True
+    else:
+        logged_in=False
+    print('logged-in=',logged_in)
