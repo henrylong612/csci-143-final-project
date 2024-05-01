@@ -2,22 +2,17 @@ import argparse
 import sqlalchemy
 from sqlalchemy import create_engine
 from tqdm import tqdm
-import faker
 import random
 import string
 
 # Define command-line arguments
 parser = argparse.ArgumentParser()
-parser.add_argument('--db', required=True)
 parser.add_argument('--print_every', type=int, default=1000)
 args = parser.parse_args()
 
 # Create database connection
-engine = create_engine(args.db, connect_args={'application_name': 'insert_data.py'})
+engine = create_engine('postgresql://postgres:pass@postgres:5432', connect_args={'application_name': 'insert_data.py'})
 connection = engine.connect()
-
-# Create Faker instance
-fake = faker.Faker()
 
 # Define characters for alphanumeric string generation
 alphanumeric_chars = string.ascii_letters + string.digits

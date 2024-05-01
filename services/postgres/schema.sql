@@ -18,4 +18,6 @@ create table messages (
     id_urls INTEGER REFERENCES urls(id_urls)
 );
 
+--CREATE EXTENSION RUM;
+
 

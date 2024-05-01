@@ -11,8 +11,6 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 import sqlalchemy
-import bleach
-import datetime
 
 app = Flask(__name__)
 
@@ -53,10 +51,11 @@ def are_credentials_good(username, password):
         'password': password
         })
 
-    if res.fetchone() is None:
-        return False
-    else:
-        return True
+    for row in res.fetchall():
+        if res[0]:
+            return True
+        else:
+            return False
 
 def retrieve_messages(a):
 
@@ -68,7 +67,7 @@ def retrieve_messages(a):
     """)
 
     res = connection.execute(sql, {
-       'offset': 0
+        'offset': a
         })
 
     for row_messages in res.fetchall():
@@ -83,7 +82,8 @@ def retrieve_messages(a):
 
         message = row_messages[1]
         cleaned_message = bleach.clean(message)
-        linked_message = bleach.linkify(cleaned_message)
+        html_message = markdown_compiler2.compile_lines(cleaned_message)
+        linked_message = bleach.linkify(html_message)
 
         image_url = 'https://robohash.org/' + row_users[1]
 
@@ -120,17 +120,6 @@ def root():
     except TypeError:
         page_number=1
     
-    '''
-    messages = [{
-            'id': 1,
-            'message': 1,
-            'username': 1,
-            'age': 1,
-            'created_at': 1,
-            'image_url': 1
-        }]
-    '''
-
     messages=retrieve_messages(page_number)
 
     # render the jinja2 template and pass the result to firefox
@@ -140,6 +129,7 @@ def root():
     # render_template does preprocessing of input html file
     # technically, the input to the render_template function is in a language called Jinja2
     # the output of render_template is html
+
 
 @app.route('/reset')
 def reset():
@@ -159,6 +149,7 @@ def reset():
     response = make_response(redirect('/'))
     response.set_cookie('page_number',str(page_number))
     return response
+
 
 @app.route('/login', methods=['GET','POST'])
 def login():
@@ -209,8 +200,6 @@ def logout():
     response.delete_cookie('page_number')
     return response
 
-
-
 @app.route('/create_user', methods=['GET','POST'])
 def create_user():
     print_debug_info()
@@ -244,26 +233,19 @@ def create_user():
             return render_template('create_user.html', not_matching=True)
         else:
             try:
-
-                sql=sqlalchemy.sql.text('''
-                    INSERT INTO users (username, password, age)
-                    VALUES (:username, :password, :age)
-                    ''')
-
-                res = connection.execute(sql, {
-                    'username': new_username,
-                    'password': new_password,
-                    'age': new_age
-                    })
-
+                con = sqlite3.connect(args.db_file)
+                sql = """
+                INSERT INTO users (username, password, age) VALUES (?, ?, ?);
+                """
+                cur = con.cursor()
+                cur.execute(sql, [new_username, new_password, new_age])
+                con.commit()
                 response = make_response(redirect('/'))
                 response.set_cookie('username',new_username)
                 response.set_cookie('password',new_password)
                 return response
-            except:
+            except sqlite3.IntegrityError:
                 return render_template('create_user.html', already_exists=True)
-
-
 
 @app.route('/create_message', methods=['GET', 'POST'])
 def create_message():
@@ -282,18 +264,13 @@ def create_message():
     if not logged_in:
         return redirect('/')
 
-    sql=sqlalchemy.sql.text('''
-        SELECT id FROM users
-        WHERE username = :username AND password = :password
-        ''')
-
-    res = connection.execute(sql, {
-        'username': username,
-        'password': password
-        })
-
-
-    for row in res.fetchall():
+    con = sqlite3.connect(args.db_file)
+    sql = """
+    SELECT id from users WHERE username=? and password=?;
+    """
+    cur = con.cursor()
+    cur.execute(sql, [username, password])
+    for row in cur.fetchall():
         sender_id=row[0]
 
     message=request.form.get('message')
@@ -303,26 +280,193 @@ def create_message():
     elif not message:
         return render_template('create_message.html', invalid_message=True, logged_in=logged_in)
     else:
-        created_at=str(datetime.datetime.now()).split('.')[0]
-        sql = sqlalchemy.sql.text("""
-        INSERT INTO messages (sender_id,message,created_at) VALUES (:sender_id, :message, :created_at);
-        """)
-        res = connection.execute(sql, {
-            'sender_id': sender_id,
-            'message': message,
-            'created_at': created_at
-            })
-        return render_template('create_message.html', message_sent=True, logged_in=logged_in)
+        try:
+            created_at=str(datetime.datetime.now()).split('.')[0]
+            con = sqlite3.connect(args.db_file)
+            sql = """
+            INSERT INTO messages (sender_id,message,created_at) VALUES (?, ?, ?);
+            """
+            cur = con.cursor()
+            cur.execute(sql, [sender_id, message, created_at])
+            con.commit()
+            return render_template('create_message.html', message_sent=True, logged_in=logged_in)
+        except sqlite3.IntegrityError:
+            return render_template('create_message.html', already_exists=True, logged_in=logged_in)
 
 @app.route('/delete_message', methods=['GET','POST'])
 def delete_message():
     message_id=request.form.get('message_id')
-    sql = sqlalchemy.sql.text("""
-    DELETE FROM messages WHERE id= :id;
-    """)
-    res = connection.execute(sql, {
-        'id': message_id
-        })
+    con = sqlite3.connect(args.db_file)
+    sql = """
+    DELETE FROM messages WHERE id=?;
+    """
+    cur = con.cursor()
+    cur.execute(sql,[str(message_id)])
+    con.commit()
     return redirect('/')
 
 
+@app.route('/edit_message', methods=['POST','GET'])
+def edit_message():
+    print_debug_info()
+
+    username=request.cookies.get('username')
+    password=request.cookies.get('password')
+
+    good_credentials=are_credentials_good(username, password)
+    if good_credentials:
+        logged_in=True
+    else:
+        logged_in=False
+    print('logged-in=',logged_in)
+
+    if not logged_in:
+        return redirect('/')
+
+    message_id=request.form.get('message_id')
+    print('message_id=',message_id)
+    original_message=request.form.get('original_message')[3:-4]
+    print('original_message=',original_message)
+    updated_message=request.form.get('updated_message')
+
+    if not message_id:
+        return redirect('/')
+
+    if updated_message is None:
+        return render_template('edit_message.html', logged_in=logged_in, message_id=message_id, original_message=original_message)
+    elif not updated_message:
+        return render_template('edit_message.html', invalid_message=True, logged_in=logged_in, message_id=message_id, original_message=original_message)
+    else:
+        try:
+            created_at=str(datetime.datetime.now()).split('.')[0]
+            con = sqlite3.connect(args.db_file)
+            sql = """
+            UPDATE messages SET message=?, created_at=? WHERE id=?;
+            """
+            print('message=',updated_message)
+            print('message_id=',message_id)
+            cur = con.cursor()
+            cur.execute(sql,[updated_message,created_at,str(message_id)])
+            con.commit()
+            return render_template('edit_message.html', message_sent=True, logged_in=logged_in, message_id=message_id)
+        except sqlite3.IntegrityError:
+            return render_template('edit_message.html', already_exists=True, logged_in=logged_in, message_id=message_id, original_message=original_message)
+
+@app.route('/delete_account', methods=['GET','POST'])
+def delete_account0():
+    print_debug_info()
+
+    username=request.cookies.get('username')
+    password=request.cookies.get('password')
+
+    good_credentials=are_credentials_good(username, password)
+    if good_credentials:
+        logged_in=True
+    else:
+        logged_in=False
+    print('logged-in=',logged_in)
+
+    if not logged_in:
+        return redirect('/')
+
+    return render_template('delete_account.html', logged_in=logged_in, account_deleted=False)
+
+@app.route('/account_deleted', methods=['GET','POST'])
+def account_deleted():
+    print_debug_info()
+
+    username=request.cookies.get('username')
+    password=request.cookies.get('password')
+
+    good_credentials=are_credentials_good(username, password)
+    if good_credentials:
+        logged_in=True
+    else:
+        logged_in=False
+    print('logged-in=',logged_in)
+
+    if not logged_in:
+        return redirect('/')
+
+    con = sqlite3.connect(args.db_file)
+    sql = """
+    SELECT id from users WHERE username=? and password=?;
+    """
+    cur = con.cursor()
+    cur.execute(sql,[username,password])
+    for row in cur.fetchall():
+        sender_id=row[0]
+
+    sql = """
+    DELETE from messages WHERE sender_id=?;
+    """
+    cur = con.cursor()
+    cur.execute(sql,[sender_id])
+    con.commit()
+
+    sql = """
+    DELETE from users WHERE username=? and password=?;
+    """
+    cur = con.cursor()
+    cur.execute(sql,[username,password])
+    con.commit()
+
+
+    response = make_response(render_template('delete_account.html', account_deleted=True))
+    response.delete_cookie('username')
+    response.delete_cookie('password')
+    response.delete_cookie('page_number')
+    return response
+
+@app.route('/next_page', methods=['GET','POST'])
+def next_page():
+    print_debug_info()
+
+    username=request.cookies.get('username')
+    password=request.cookies.get('password')
+    good_credentials=are_credentials_good(username, password)
+    if good_credentials:
+        logged_in=True
+    else:
+        logged_in=False
+    print('logged_in=',logged_in)
+
+    try:
+        page_number=int(request.cookies.get('page_number'))
+    except TypeError:
+        page_number=1
+
+    print('page_number=',page_number)
+    page_number+=1
+
+
+    response = make_response(redirect('/'))
+    response.set_cookie('page_number',str(page_number))
+    return response
+
+@app.route('/previous_page', methods=['GET','POST'])
+def previous_page():
+    print_debug_info()
+
+    username=request.cookies.get('username')
+    password=request.cookies.get('password')
+    good_credentials=are_credentials_good(username, password)
+    if good_credentials:
+        logged_in=True
+    else:
+        logged_in=False
+    print('logged-in=',logged_in)
+
+    try:
+        page_number=int(request.cookies.get('page_number'))
+    except TypeError:
+        page_number=1
+
+    print('page_number=',page_number)
+    page_number-=1
+
+    response = make_response(redirect('/'))
+    response.set_cookie('page_number',str(page_number))
+    return response
+
+app.run()
