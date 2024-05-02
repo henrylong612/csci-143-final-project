@@ -1,7 +1,12 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<h2>Home</h2>
+<h2>Search</h2>
+
+<form action="/search" method="POST">
+    <input type="text" name="query">
+    <input type="submit" value="search" class="submit">
+</form>
 
 {% for message in messages %}
 <div class="container">
@@ -27,7 +32,7 @@
         <a href="?page={{ page_number - 1 }}" class="submit">Previous</a>
     {% endif %}
 
-    Page {{ page_number }} 
+    Page {{ page_number }}
 
     {% if messages|length == 20 %}
         <a href="?page={{ page_number + 1 }}" class="submit">Next</a>

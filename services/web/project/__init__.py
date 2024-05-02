@@ -64,11 +64,11 @@ def retrieve_messages(a):
     sql = sqlalchemy.sql.text("""
     SELECT sender_id,message,created_at,id
     FROM messages
-    ORDER BY created_at DESC LIMIT 50 OFFSET :offset;
+    ORDER BY created_at DESC LIMIT 20 OFFSET :offset * 20;
     """)
 
     res = connection.execute(sql, {
-       'offset': a
+       'offset': a - 1
         })
 
     for row_messages in res.fetchall():
@@ -100,6 +100,58 @@ def retrieve_messages(a):
     return messages
 
 
+def query_messages(query, a):
+
+    messages = []
+    sql = sqlalchemy.sql.text("""
+    SELECT 
+    sender_id,
+    ts_headline(message, to_tsquery(:query),
+    'StartSel="<span class=query><b>",
+    StopSel="</b></span>"') AS highlighted_message,
+    created_at,
+    id
+    FROM messages
+    WHERE to_tsvector(message) @@ to_tsquery(:query)
+    ORDER BY 
+    to_tsvector(message) <=> to_tsquery(:query),
+    created_at DESC 
+    LIMIT 20 OFFSET :offset * 20;
+    """)
+
+    res = connection.execute(sql, {
+       'offset': a - 1,
+       'query': ' & '.join(query.split())
+        })
+
+    for row_messages in res.fetchall():
+        # convert sender_id into a username
+        sql = sqlalchemy.sql.text("""
+        SELECT id,username,password,age
+        FROM users
+        WHERE id=:id;
+        """)
+        user_res = connection.execute(sql, {'id': row_messages[0]})
+        row_users = user_res.fetchone()
+
+        message = row_messages[1]
+        cleaned_message = bleach.clean(message, tags=['b','span'], attributes={'span': ['class']})
+        linked_message = bleach.linkify(cleaned_message)
+
+        image_url = 'https://robohash.org/' + row_users[1]
+
+        # build the message dictionary
+        messages.append({
+            'id': row_messages[3],
+            'message': linked_message,
+            'username': row_users[1],
+            'age': row_users[3],
+            'created_at': row_messages[2],
+            'image_url': image_url
+        })
+
+    return messages
+
 
 @app.route('/')
 def root():
@@ -115,10 +167,7 @@ def root():
         logged_in=False
     print('logged-in=',logged_in)
 
-    try:
-        page_number=int(request.cookies.get('page_number'))
-    except TypeError:
-        page_number=1
+    page_number = int(request.args.get('page', 1))
     
     messages=retrieve_messages(page_number)
 
@@ -146,7 +195,6 @@ def reset():
     page_number=1
 
     response = make_response(redirect('/'))
-    response.set_cookie('page_number',str(page_number))
     return response
 
 @app.route('/login', methods=['GET','POST'])
@@ -195,7 +243,6 @@ def logout():
     response = make_response(render_template('logout.html'))
     response.delete_cookie('username')
     response.delete_cookie('password')
-    response.delete_cookie('page_number')
     return response
 
 
@@ -364,8 +411,6 @@ def edit_message():
             return render_template('edit_message.html', already_exists=True, logged_in=logged_in, message_id=message_id, original_message=original_message)
 
 
-
-
 @app.route('/delete_account', methods=['GET','POST'])
 def delete_account0():
     print_debug_info()
@@ -431,64 +476,11 @@ def account_deleted():
     response = make_response(render_template('delete_account.html', account_deleted=True))
     response.delete_cookie('username')
     response.delete_cookie('password')
-    response.delete_cookie('page_number')
-    return response
-
-
-
-@app.route('/next_page', methods=['GET','POST'])
-def next_page():
-    print_debug_info()
-
-    username=request.cookies.get('username')
-    password=request.cookies.get('password')
-    good_credentials=are_credentials_good(username, password)
-    if good_credentials:
-        logged_in=True
-    else:
-        logged_in=False
-    print('logged_in=',logged_in)
-
-    try:
-        page_number=int(request.cookies.get('page_number'))
-    except TypeError:
-        page_number=1
-
-    print('page_number=',page_number)
-    page_number+=1
-
-
-    response = make_response(redirect('/'))
-    response.set_cookie('page_number',str(page_number))
-    return response
-
-@app.route('/previous_page', methods=['GET','POST'])
-def previous_page():
-    print_debug_info()
-
-    username=request.cookies.get('username')
-    password=request.cookies.get('password')
-    good_credentials=are_credentials_good(username, password)
-    if good_credentials:
-        logged_in=True
-    else:
-        logged_in=False
-    print('logged-in=',logged_in)
-
-    try:
-        page_number=int(request.cookies.get('page_number'))
-    except TypeError:
-        page_number=1
-
-    print('page_number=',page_number)
-    page_number-=1
-
-    response = make_response(redirect('/'))
-    response.set_cookie('page_number',str(page_number))
     return response
 
 @app.route('/search', methods=['GET','POST'])
 def search():
+
     print_debug_info()
 
     username=request.cookies.get('username')
@@ -499,3 +491,28 @@ def search():
     else:
         logged_in=False
     print('logged-in=',logged_in)
+
+    page_number = int(request.args.get('page', 1))
+    
+    if request.form.get('query'):
+        query=request.form.get('query')
+    elif request.cookies.get('query'):
+        query=request.cookies.get('query')
+    else:
+        query = None
+
+    if query:
+        messages=query_messages(query, page_number)
+    else:
+        messages=retrieve_messages(page_number)
+
+    response = make_response(render_template('search.html', messages=messages, logged_in=logged_in, username=username, page_number=page_number))
+
+    if query:
+        response.set_cookie('query',query)
+
+    return response
+
+    # render_template does preprocessing of input html file
+    # technically, the input to the render_template function is in a language called Jinja2
+    # the output of render_template is html
