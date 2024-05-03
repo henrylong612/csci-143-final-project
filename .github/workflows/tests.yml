@@ -30,7 +30,7 @@ jobs:
         # and a proper check would be to have an infinite loop that terminates once the data has been loaded
         sleep 20
 
-        sh ./load_tweets.sh
+        sh ./insert_data.sh
 
         # run the tests
         # docker-compose exec -T postgres psql
