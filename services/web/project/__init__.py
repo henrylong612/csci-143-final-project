@@ -13,7 +13,6 @@ from werkzeug.utils import secure_filename
 import sqlalchemy
 import bleach
 import datetime
-import logging
 
 app = Flask(__name__)
 
