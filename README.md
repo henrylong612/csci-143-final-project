@@ -1,6 +1,5 @@
 # Final Project
 [![](https://github.com/henrylong612/csci-143-final-project/workflows/tests/badge.svg)](https://github.com/henrylong612/csci-143-final-project/actions?query=workflow%3Atests)
-[![](https://github.com/henrylong612/csci-143-final-project/workflows/tests/badge.svg)](https://github.com/henrylong612/csci-143-final-project/actions?query=workflow%3Atests)
 
 You will create your own database-backed webpage from scratch using the Instagram architecture.
 The default project will be a Twitter clone webpage, but you are free to create any type of webpage.
