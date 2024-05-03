@@ -1,0 +1,8 @@
+
+
+Create github actions test case that builds the containers, loads test data into the database, and passes (with a badge) only when there are no errors in this process.
+
+Make sure that all of the SQL commands in the __init__.py file are streamlined (may need to use JOINs)
+Make appropriate indexes and include in schema.sql file
+
+Make sure that ports can be accessed correctly and remotely

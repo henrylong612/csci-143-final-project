@@ -61,6 +61,15 @@ body {
     color: #064579;
   }
   
+.suggestion a {
+    text-decoration: none;
+    color: #1DA1F2;
+  }
+  
+.suggestion a:hover {
+    color: #064579;
+  }
+
 .main {
     margin-left: 140px; /* Same width as the sidebar + left position in px */
     font-size: 28px; /* Increased text to enable scrolling */

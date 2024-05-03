@@ -8,12 +8,12 @@ cli = FlaskGroup(app)
 
 @cli.command("create_db")
 def create_db():
-    counter = 0
+    pass
 
 
 @cli.command("seed_db")
 def seed_db():
-    counter = 0
+    pass
 
 
 if __name__ == "__main__":

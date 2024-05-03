@@ -13,30 +13,31 @@ from werkzeug.utils import secure_filename
 import sqlalchemy
 import bleach
 import datetime
+import logging
 
 app = Flask(__name__)
 
 engine = sqlalchemy.create_engine("postgresql://postgres:pass@postgres:5432", connect_args={
     'application_name': '__init__.py',
-    })
+})
 connection = engine.connect()
+
 
 def print_debug_info():
     # requests (PLURAL) library for downloading
     # now we need request (SINGULAR)
 
     # GET method
-    print("request.args.get('username')=",request.args.get('username'))
-    print("request.args.get('password')=",request.args.get('password'))
+    print("request.args.get('username')=", request.args.get('username'))
+    print("request.args.get('password')=", request.args.get('password'))
 
     # POST method
-    print("request.form.get('username')=",request.form.get('username'))
-    print("request.form.get('password')=",request.form.get('password'))
+    print("request.form.get('username')=", request.form.get('username'))
+    print("request.form.get('password')=", request.form.get('password'))
 
     # cookies
-    print("request.cookies.get('username')=",request.cookies.get('username'))
-    print("request.cookies.get('password')=",request.cookies.get('password'))
-
+    print("request.cookies.get('username')=", request.cookies.get('username'))
+    print("request.cookies.get('password')=", request.cookies.get('password'))
 
 
 def are_credentials_good(username, password):
@@ -51,12 +52,13 @@ def are_credentials_good(username, password):
     res = connection.execute(sql, {
         'username': username,
         'password': password
-        })
+    })
 
     if res.fetchone() is None:
         return False
     else:
         return True
+
 
 def retrieve_messages(a):
 
@@ -68,8 +70,8 @@ def retrieve_messages(a):
     """)
 
     res = connection.execute(sql, {
-       'offset': a - 1
-        })
+        'offset': a - 1
+    })
 
     for row_messages in res.fetchall():
         # convert sender_id into a username
@@ -104,48 +106,45 @@ def query_messages(query, a):
 
     messages = []
     sql = sqlalchemy.sql.text("""
-    SELECT 
+    SELECT
     sender_id,
     ts_headline(message, to_tsquery(:query),
     'StartSel="<span class=query><b>",
     StopSel="</b></span>"') AS highlighted_message,
     created_at,
-    id
+    messages.id,
+    username,
+    age
     FROM messages
-    WHERE to_tsvector(message) @@ to_tsquery(:query)
-    ORDER BY 
+    JOIN users ON (messages.sender_id = users.id)
+    WHERE to_tsvector('english', message) @@ to_tsquery(:query)
+    ORDER BY
     to_tsvector(message) <=> to_tsquery(:query),
-    created_at DESC 
-    LIMIT 20 OFFSET :offset * 20;
+    created_at DESC
+    LIMIT 20 OFFSET :offset;
     """)
 
     res = connection.execute(sql, {
-       'offset': a - 1,
-       'query': ' & '.join(query.split())
-        })
+        'offset': 20 * (a - 1),
+        'query': ' & '.join(query.split())
+    })
+
+    print('inside query_messages')
 
     for row_messages in res.fetchall():
-        # convert sender_id into a username
-        sql = sqlalchemy.sql.text("""
-        SELECT id,username,password,age
-        FROM users
-        WHERE id=:id;
-        """)
-        user_res = connection.execute(sql, {'id': row_messages[0]})
-        row_users = user_res.fetchone()
 
         message = row_messages[1]
-        cleaned_message = bleach.clean(message, tags=['b','span'], attributes={'span': ['class']})
+        cleaned_message = bleach.clean(message, tags=['b', 'span'], attributes={'span': ['class']})
         linked_message = bleach.linkify(cleaned_message)
 
-        image_url = 'https://robohash.org/' + row_users[1]
+        image_url = 'https://robohash.org/' + row_messages[4]
 
         # build the message dictionary
         messages.append({
             'id': row_messages[3],
             'message': linked_message,
-            'username': row_users[1],
-            'age': row_users[3],
+            'username': row_messages[4],
+            'age': row_messages[5],
             'created_at': row_messages[2],
             'image_url': image_url
         })
@@ -153,72 +152,99 @@ def query_messages(query, a):
     return messages
 
 
+def give_suggestion(query):
+
+    suggestion_list = []
+
+    for word in query.split():
+
+        sql = sqlalchemy.sql.text("""
+        SELECT word, sml
+        FROM fts_word,
+        SIMILARITY(word, :query) AS sml
+        ORDER BY sml DESC LIMIT 1;
+        """)
+
+        res = connection.execute(sql, {
+            'query': word
+        })
+
+        try:
+            suggestion_list.append(res.fetchone()[0])
+        except TypeError:
+            pass
+
+    suggestion = ' '.join(suggestion_list)
+    print('suggestion=', suggestion)
+    return suggestion
+
+
 @app.route('/')
 def root():
-    
+
     print_debug_info()
 
-    username=request.cookies.get('username')
-    password=request.cookies.get('password')
-    good_credentials=are_credentials_good(username, password)
+    username = request.cookies.get('username')
+    password = request.cookies.get('password')
+    good_credentials = are_credentials_good(username, password)
     if good_credentials:
-        logged_in=True
+        logged_in = True
     else:
-        logged_in=False
-    print('logged-in=',logged_in)
+        logged_in = False
+    print('logged-in=', logged_in)
 
     page_number = int(request.args.get('page', 1))
-    
-    messages=retrieve_messages(page_number)
+
+    messages = retrieve_messages(page_number)
 
     # render the jinja2 template and pass the result to firefox
-    
+
     return render_template('root.html', messages=messages, logged_in=logged_in, username=username, page_number=page_number)
 
     # render_template does preprocessing of input html file
     # technically, the input to the render_template function is in a language called Jinja2
     # the output of render_template is html
 
+
 @app.route('/reset')
 def reset():
     print_debug_info()
 
-    username=request.cookies.get('username')
-    password=request.cookies.get('password')
-    good_credentials=are_credentials_good(username, password)
+    username = request.cookies.get('username')
+    password = request.cookies.get('password')
+    good_credentials = are_credentials_good(username, password)
     if good_credentials:
-        logged_in=True
+        logged_in = True
     else:
-        logged_in=False
-    print('logged-in=',logged_in)
-
-    page_number=1
+        logged_in = False
+    print('logged-in=', logged_in)
 
     response = make_response(redirect('/'))
     return response
 
-@app.route('/login', methods=['GET','POST'])
+
+@app.route('/login', methods=['GET', 'POST'])
 def login():
     print_debug_info()
 
-    username=request.cookies.get('username')
-    password=request.cookies.get('password')
+    username = request.cookies.get('username')
+    password = request.cookies.get('password')
 
-    good_credentials=are_credentials_good(username, password)
+    good_credentials = are_credentials_good(username, password)
     if good_credentials:
-        logged_in=True
+        logged_in = True
     else:
-        logged_in=False
-    print('logged-in=',logged_in)
+        logged_in = False
+    print('logged-in=', logged_in)
 
     if logged_in:
         return redirect('/')
 
-    username=request.form.get('username')
-    password=request.form.get('password')
+    username = request.form.get('username')
+    password = request.form.get('password')
 
-    good_credentials=are_credentials_good(username, password)
-    print('good_credentials=',good_credentials)
+    good_credentials = are_credentials_good(username, password)
+    print('good_credentials=', good_credentials)
 
     # first time we visited, no form submission
     if username is None:
@@ -229,12 +255,13 @@ def login():
         if not good_credentials:
             return render_template('login.html', bad_credentials=True)
         else:
-            #create a cookie that contains the username/password info
+            # create a cookie that contains the username/password info
             # set cookie
             response = make_response(redirect('/'))
-            response.set_cookie('username',username)
-            response.set_cookie('password',password)
+            response.set_cookie('username', username)
+            response.set_cookie('password', password)
             return response
+
 
 @app.route('/logout')
 def logout():
@@ -246,28 +273,27 @@ def logout():
     return response
 
 
-
-@app.route('/create_user', methods=['GET','POST'])
+@app.route('/create_user', methods=['GET', 'POST'])
 def create_user():
     print_debug_info()
 
-    username=request.cookies.get('username')
-    password=request.cookies.get('password')
+    username = request.cookies.get('username')
+    password = request.cookies.get('password')
 
-    good_credentials=are_credentials_good(username, password)
+    good_credentials = are_credentials_good(username, password)
     if good_credentials:
-        logged_in=True
+        logged_in = True
     else:
-        logged_in=False
-    print('logged-in=',logged_in)
+        logged_in = False
+    print('logged-in=', logged_in)
 
     if logged_in:
         return redirect('/')
 
-    new_username=request.form.get('new_username')
-    new_password=request.form.get('new_password')
-    new_password2=request.form.get('new_password2')
-    new_age=request.form.get('new_age')
+    new_username = request.form.get('new_username')
+    new_password = request.form.get('new_password')
+    new_password2 = request.form.get('new_password2')
+    new_age = request.form.get('new_age')
 
     if new_username is None:
         return render_template('create_user.html')
@@ -276,12 +302,11 @@ def create_user():
     elif not new_age.isnumeric():
         return render_template('create_user.html', invalid_age=True)
     else:
-        if new_password!=new_password2:
+        if new_password != new_password2:
             return render_template('create_user.html', not_matching=True)
         else:
             try:
-
-                sql=sqlalchemy.sql.text('''
+                sql = sqlalchemy.sql.text('''
                     INSERT INTO users (username, password, age)
                     VALUES (:username, :password, :age)
                     ''')
@@ -290,35 +315,36 @@ def create_user():
                     'username': new_username,
                     'password': new_password,
                     'age': new_age
-                    })
+                })
+
+                print(res)
 
                 response = make_response(redirect('/'))
-                response.set_cookie('username',new_username)
-                response.set_cookie('password',new_password)
+                response.set_cookie('username', new_username)
+                response.set_cookie('password', new_password)
                 return response
             except sqlalchemy.exc.IntegrityError:
                 return render_template('create_user.html', already_exists=True)
-
 
 
 @app.route('/create_message', methods=['GET', 'POST'])
 def create_message():
     print_debug_info()
 
-    username=request.cookies.get('username')
-    password=request.cookies.get('password')
+    username = request.cookies.get('username')
+    password = request.cookies.get('password')
 
-    good_credentials=are_credentials_good(username, password)
+    good_credentials = are_credentials_good(username, password)
     if good_credentials:
-        logged_in=True
+        logged_in = True
     else:
-        logged_in=False
-    print('logged-in=',logged_in)
+        logged_in = False
+    print('logged-in=', logged_in)
 
     if not logged_in:
         return redirect('/')
 
-    sql=sqlalchemy.sql.text('''
+    sql = sqlalchemy.sql.text('''
         SELECT id FROM users
         WHERE username = :username AND password = :password
         ''')
@@ -326,20 +352,19 @@ def create_message():
     res = connection.execute(sql, {
         'username': username,
         'password': password
-        })
-
+    })
 
     for row in res.fetchall():
-        sender_id=row[0]
+        sender_id = row[0]
 
-    message=request.form.get('message')
+    message = request.form.get('message')
 
     if message is None:
         return render_template('create_message.html', logged_in=logged_in)
     elif not message:
         return render_template('create_message.html', invalid_message=True, logged_in=logged_in)
     else:
-        created_at=str(datetime.datetime.now()).split('.')[0]
+        created_at = str(datetime.datetime.now()).split('.')[0]
         sql = sqlalchemy.sql.text("""
         INSERT INTO messages (sender_id,message,created_at) VALUES (:sender_id, :message, :created_at);
         """)
@@ -347,44 +372,50 @@ def create_message():
             'sender_id': sender_id,
             'message': message,
             'created_at': created_at
-            })
+        })
+
+        print(res)
+
         return render_template('create_message.html', message_sent=True, logged_in=logged_in)
 
-@app.route('/delete_message', methods=['GET','POST'])
+
+@app.route('/delete_message', methods=['GET', 'POST'])
 def delete_message():
-    message_id=request.form.get('message_id')
+    message_id = request.form.get('message_id')
     sql = sqlalchemy.sql.text("""
     DELETE FROM messages WHERE id= :id;
     """)
     res = connection.execute(sql, {
         'id': message_id
-        })
+    })
+
+    print(res)
+
     return redirect('/')
 
 
-
-@app.route('/edit_message', methods=['POST','GET'])
+@app.route('/edit_message', methods=['POST', 'GET'])
 def edit_message():
     print_debug_info()
 
-    username=request.cookies.get('username')
-    password=request.cookies.get('password')
+    username = request.cookies.get('username')
+    password = request.cookies.get('password')
 
-    good_credentials=are_credentials_good(username, password)
+    good_credentials = are_credentials_good(username, password)
     if good_credentials:
-        logged_in=True
+        logged_in = True
     else:
-        logged_in=False
-    print('logged-in=',logged_in)
+        logged_in = False
+    print('logged-in=', logged_in)
 
     if not logged_in:
         return redirect('/')
 
-    message_id=request.form.get('message_id')
-    print('message_id=',message_id)
-    original_message=request.form.get('original_message')[3:-4]
-    print('original_message=',original_message)
-    updated_message=request.form.get('updated_message')
+    message_id = request.form.get('message_id')
+    print('message_id=', message_id)
+    original_message = request.form.get('original_message')
+    print('original_message=', original_message)
+    updated_message = request.form.get('updated_message')
 
     if not message_id:
         return redirect('/')
@@ -395,54 +426,56 @@ def edit_message():
         return render_template('edit_message.html', invalid_message=True, logged_in=logged_in, message_id=message_id, original_message=original_message)
     else:
         try:
-            created_at=str(datetime.datetime.now()).split('.')[0]
+            created_at = str(datetime.datetime.now()).split('.')[0]
             sql = sqlalchemy.sql.text("""
             UPDATE messages SET message= :updated_message, created_at= :created_at WHERE id= :message_id;
             """)
-            print('message=',updated_message)
-            print('message_id=',message_id)
+            print('message=', updated_message)
+            print('message_id=', message_id)
             res = connection.execute(sql, {
                 'updated_message': updated_message,
                 'created_at': created_at,
                 'message_id': str(message_id)
-                })
+            })
+            print(res)
             return render_template('edit_message.html', message_sent=True, logged_in=logged_in, message_id=message_id)
-        except sqlalchemy.exc.IntegrityError: 
+        except sqlalchemy.exc.IntegrityError:
             return render_template('edit_message.html', already_exists=True, logged_in=logged_in, message_id=message_id, original_message=original_message)
 
 
-@app.route('/delete_account', methods=['GET','POST'])
+@app.route('/delete_account', methods=['GET', 'POST'])
 def delete_account0():
     print_debug_info()
 
-    username=request.cookies.get('username')
-    password=request.cookies.get('password')
+    username = request.cookies.get('username')
+    password = request.cookies.get('password')
 
-    good_credentials=are_credentials_good(username, password)
+    good_credentials = are_credentials_good(username, password)
     if good_credentials:
-        logged_in=True
+        logged_in = True
     else:
-        logged_in=False
-    print('logged-in=',logged_in)
+        logged_in = False
+    print('logged-in=', logged_in)
 
     if not logged_in:
         return redirect('/')
 
     return render_template('delete_account.html', logged_in=logged_in, account_deleted=False)
 
-@app.route('/account_deleted', methods=['GET','POST'])
+
+@app.route('/account_deleted', methods=['GET', 'POST'])
 def account_deleted():
     print_debug_info()
 
-    username=request.cookies.get('username')
-    password=request.cookies.get('password')
+    username = request.cookies.get('username')
+    password = request.cookies.get('password')
 
-    good_credentials=are_credentials_good(username, password)
+    good_credentials = are_credentials_good(username, password)
     if good_credentials:
-        logged_in=True
+        logged_in = True
     else:
-        logged_in=False
-    print('logged-in=',logged_in)
+        logged_in = False
+    print('logged-in=', logged_in)
 
     if not logged_in:
         return redirect('/')
@@ -453,16 +486,16 @@ def account_deleted():
     res = connection.execute(sql, {
         'username': username,
         'password': password
-        })
+    })
     for row in res.fetchall():
-        sender_id=row[0]
+        sender_id = row[0]
 
     sql = sqlalchemy.sql.text("""
     DELETE from messages WHERE sender_id= :id;
     """)
     res = connection.execute(sql, {
         'id': sender_id
-        })
+    })
 
     sql = sqlalchemy.sql.text("""
     DELETE from users WHERE username= :u and password= :p;
@@ -470,49 +503,49 @@ def account_deleted():
     res = connection.execute(sql, {
         'u': username,
         'p': password
-        })
-
+    })
 
     response = make_response(render_template('delete_account.html', account_deleted=True))
     response.delete_cookie('username')
     response.delete_cookie('password')
     return response
 
-@app.route('/search', methods=['GET','POST'])
+
+@app.route('/search', methods=['GET', 'POST'])
 def search():
+
+    print('am I even on the page??')
 
     print_debug_info()
 
-    username=request.cookies.get('username')
-    password=request.cookies.get('password')
-    good_credentials=are_credentials_good(username, password)
+    username = request.cookies.get('username')
+    password = request.cookies.get('password')
+    good_credentials = are_credentials_good(username, password)
     if good_credentials:
-        logged_in=True
+        logged_in = True
     else:
-        logged_in=False
-    print('logged-in=',logged_in)
+        logged_in = False
+    print('logged-in=', logged_in)
 
     page_number = int(request.args.get('page', 1))
-    
+
     if request.form.get('query'):
-        query=request.form.get('query')
-    elif request.cookies.get('query'):
-        query=request.cookies.get('query')
+        query = request.form.get('query')
     else:
-        query = None
+        query = request.args.get('query', '')
+
+    print('before query_messages')
 
     if query:
-        messages=query_messages(query, page_number)
+        messages = query_messages(query, page_number)
+        suggestion = give_suggestion(query)
     else:
-        messages=retrieve_messages(page_number)
+        messages = retrieve_messages(page_number)
+        suggestion = ''
 
-    response = make_response(render_template('search.html', messages=messages, logged_in=logged_in, username=username, page_number=page_number))
+    response = make_response(render_template('search.html', messages=messages, logged_in=logged_in, username=username, page_number=page_number, query=query, suggestion=suggestion))
 
     if query:
-        response.set_cookie('query',query)
+        response.set_cookie('query', query)
 
     return response
-
-    # render_template does preprocessing of input html file
-    # technically, the input to the render_template function is in a language called Jinja2
-    # the output of render_template is html
